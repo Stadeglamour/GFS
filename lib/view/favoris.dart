@@ -5,19 +5,18 @@ import 'ajout.dart';
 import 'home.dart';
 import 'search.dart';
 import 'profil.dart';
+import 'detail.dart'; // pour la navigation vers la page de détail
 
 class FavorisPage extends StatefulWidget {
   const FavorisPage({super.key});
 
   @override
-  State<FavorisPage> createState() => _FavorisPageState();
+  State<FavorisPage> createState() => _FavorisPageState(); // ✅ Correction : ajout de la parenthèse
 }
 
 class _FavorisPageState extends State<FavorisPage> {
   final SupabaseClient supabase = Supabase.instance.client;
 
-  List<Map<String, dynamic>> _favoris = [];
-  bool _isLoading = true;
   late final String? _userId;
   late final Stream<List<Map<String, dynamic>>> _favorisStream;
 
@@ -31,25 +30,13 @@ class _FavorisPageState extends State<FavorisPage> {
       // Création d'un stream qui écoute les changements sur la table 'favoris' pour cet user
       _favorisStream = supabase
           .from('favoris')
-          .stream(primaryKey: ['user_id', 'film_id'])
+          .stream(primaryKey: ['user_id', 'film_id', 'serie_id'])
           .eq('user_id', _userId!)
           .map((maps) => List<Map<String, dynamic>>.from(maps));
     } else {
       // Pas d'utilisateur connecté -> stream vide
       _favorisStream = Stream.value([]);
     }
-  }
-
-  // Fonction pour récupérer la liste des favoris avec info film (jointure)
-  Future<List<Map<String, dynamic>>> _fetchFavoris() async {
-    if (_userId == null) return [];
-
-    final data = await supabase
-        .from('favoris')
-        .select('film_id, films(nom, img)')
-        .eq('user_id', _userId);
-
-    return List<Map<String, dynamic>>.from(data);
   }
 
   @override
@@ -71,63 +58,80 @@ class _FavorisPageState extends State<FavorisPage> {
           if (snapshot.hasError) {
             return Center(child: Text("Erreur: ${snapshot.error}"));
           }
-          if (!snapshot.hasData || snapshot.data!.isEmpty) {
+
+          final favoris = snapshot.data ?? [];
+
+          if (favoris.isEmpty) {
             return const Center(child: Text("Aucun favori pour le moment."));
           }
 
-          // Récupérer l'id des films favoris dans la liste snapshot.data!
-          final filmIds = snapshot.data!.map((fav) => fav['film_id']).toList();
+          // Séparer les IDs de films et de séries
+          final filmIds = favoris
+              .where((fav) => fav['film_id'] != null)
+              .map((fav) => fav['film_id'] as int)
+              .toList();
 
-          // On récupère les infos complètes des films en une requête (optimisé)
-          return FutureBuilder<List<Map<String, dynamic>>>(
-  future: supabase
-      .from('film') // ou 'films' selon ta BDD
-      .select()
-      .in_('id', filmIds)
-      .order('nom', ascending: true)
-      .execute()
-      .then((response) {
-       
-        return List<Map<String, dynamic>>.from(response.data as List);
-      }),
-  builder: (context, filmSnapshot) {
-    if (filmSnapshot.connectionState == ConnectionState.waiting) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (filmSnapshot.hasError) {
-      return Center(child: Text("Erreur films: ${filmSnapshot.error}"));
-    }
-    if (!filmSnapshot.hasData || filmSnapshot.data!.isEmpty) {
-      return const Center(child: Text("Aucun film trouvé."));
-    }
+          final serieIds = favoris
+              .where((fav) => fav['serie_id'] != null)
+              .map((fav) => fav['serie_id'] as int)
+              .toList();
 
-    final films = filmSnapshot.data!;
+          return FutureBuilder<Map<String, List<Map<String, dynamic>>>>(
+            future: _fetchFavorisDetails(filmIds, serieIds),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              if (snapshot.hasError) {
+                return Center(child: Text("Erreur: ${snapshot.error}"));
+              }
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: films.length,
-      itemBuilder: (context, index) {
-        final film = films[index];
-        return Card(
-          margin: const EdgeInsets.only(bottom: 16),
-          child: ListTile(
-            leading: film['img'] != null
-                ? Image.network(
-                    film['img'],
-                    width: 50,
-                    fit: BoxFit.cover,
-                  )
-                : const Icon(Icons.movie),
-            title: Text(film['nom'] ?? 'Titre inconnu'),
-            onTap: () {
-              // Optionnel: navigation vers détail film
+              final films = snapshot.data!['films']!;
+              final series = snapshot.data!['series']!;
+
+              // Fusion des films et séries avec indication du type
+              final allItems = [
+                ...films.map((f) => {'type': 'film', 'data': f}),
+                ...series.map((s) => {'type': 'serie', 'data': s}),
+              ];
+
+              return ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: allItems.length,
+                itemBuilder: (context, index) {
+                  final item = allItems[index];
+                  final data = item['data'] as Map<String, dynamic>;
+                  final isFilm = item['type'] == 'film';
+
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 16),
+                    child: ListTile(
+                      leading: data['img'] != null
+                          ? Image.network(
+                              data['img'],
+                              width: 50,
+                              fit: BoxFit.cover,
+                            )
+                          : const Icon(Icons.movie),
+                      title: Text(data['nom'] ?? 'Titre inconnu'),
+                      subtitle: Text(isFilm ? 'Film' : 'Série'),
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => DetailPage(
+                              film: isFilm ? data : null,
+                              serie: !isFilm ? data : null,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  );
+                },
+              );
             },
-          ),
-        );
-      },
-    );
-  },
-);
+          );
         },
       ),
 
@@ -178,5 +182,45 @@ class _FavorisPageState extends State<FavorisPage> {
         ],
       ),
     );
+  }
+
+  // Fonction pour récupérer les infos des films et séries favoris
+  Future<Map<String, List<Map<String, dynamic>>>> _fetchFavorisDetails(
+    List<int> filmIds,
+    List<int> serieIds,
+  ) async {
+    final futures = <Future<List<Map<String, dynamic>>>>[];
+
+    if (filmIds.isNotEmpty) {
+      futures.add(
+        supabase
+            .from('film')
+            .select()
+            .in_('id', filmIds)
+            .order('nom')
+            .then((res) => List<Map<String, dynamic>>.from(res)),
+      );
+    } else {
+      futures.add(Future.value([]));
+    }
+
+    if (serieIds.isNotEmpty) {
+      futures.add(
+        supabase
+            .from('serie')
+            .select()
+            .in_('id', serieIds)
+            .order('nom')
+            .then((res) => List<Map<String, dynamic>>.from(res)),
+      );
+    } else {
+      futures.add(Future.value([]));
+    }
+
+    final results = await Future.wait(futures);
+    return {
+      'films': results[0],
+      'series': results[1],
+    };
   }
 }

@@ -38,7 +38,6 @@ Future<void> _fetchUserPseudo() async {
   }
 }
 
-
   Future<void> _handleSubmit() async {
   final email = _emailController.text.trim();
   final password = _passwordController.text.trim();

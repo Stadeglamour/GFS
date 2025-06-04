@@ -32,6 +32,22 @@ class _HomePageState extends State<HomePage> {
     return films.cast<Map<String, dynamic>>();
   }
 
+   // Fonction  qui récupère les séries depuis la table 'serie' de Supabase
+  Future<List<Map<String, dynamic>>> fetchSeries() async {
+    final response = await supabase.from('serie').select().execute();
+
+    final List series = response.data ?? [];
+    return series.cast<Map<String, dynamic>>();
+  }
+
+  // Fonction qui récupère les acteurs depuis la table 'acteur' de Supabase
+  Future<List<Map<String, dynamic>>> fetchActeurs() async {
+    final response = await supabase.from('acteur').select().execute();
+
+    final List acteurs = response.data ?? [];
+    return acteurs.cast<Map<String, dynamic>>();
+  }
+
   @override
   Widget build(BuildContext context) {
     //****************************************************************
@@ -125,57 +141,120 @@ class _HomePageState extends State<HomePage> {
                 ],
               ),
             ),
+            // 🟡 SÉRIES -  récupère les données dynamiques depuis Supabase
+           FutureBuilder(
+  future: Supabase.instance.client.from('serie').select(),
+  builder: (context, snapshot) {
+    if (snapshot.connectionState == ConnectionState.waiting) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (snapshot.hasError) {
+      return Text("Erreur : ${snapshot.error}");
+    }
+    final List data = snapshot.data as List;
 
-            // 🔵 SÉRIES - données statiques pour l'instant
-            ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                const Text(
-                  "Séries à ne pas manquer",
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 10),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
-                      mediaCard(title: "Breaking Bad"),
-                      const SizedBox(width: 12),
-                      mediaCard(title: "Stranger Things"),
-                      const SizedBox(width: 12),
-                      mediaCard(title: "Dark"),
-                      const SizedBox(width: 12),
-                      mediaCard(title: "The Witcher"),
-                    ],
+    if (data.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.all(16),
+        child: Text("Aucune série disponible."),
+      );
+    }
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      children: [
+        const Text(
+          "Séries à ne pas manquer",
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 10),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: data.map<Widget>((serie) {
+              return GestureDetector(
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => DetailPage(serie: serie),
+                    ),
+                  );
+                },
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 12),
+                  child: mediaCard(
+                    title: serie['nom'] ?? 'Sans titre',
+                    imageUrl: serie['img'],
                   ),
                 ),
-              ],
-            ),
-
+              );
+            }).toList(),
+          ),
+        ),
+      ],
+    );
+  },
+),
             // 🟣 ACTEURS - données statiques pour l'instant
-            ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                const Text(
-                  "Acteurs en vedette",
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+           FutureBuilder<List<Map<String, dynamic>>>(
+  future: fetchActeurs(),
+  builder: (context, snapshot) {
+    if (snapshot.connectionState == ConnectionState.waiting) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (snapshot.hasError) {
+      return Text("Erreur : ${snapshot.error}");
+    }
+    final acteurs = snapshot.data ?? [];
+    if (acteurs.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.all(16),
+        child: Text("Aucun acteur disponible."),
+      );
+    }
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      children: [
+        const Text(
+          "Vos acteurs",
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 10),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: acteurs.map<Widget>((acteur) {
+              return GestureDetector(
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => DetailPage(film: acteur),
+                    ),
+                  );
+                },
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 12),
+                  child: mediaCard(
+                    title: '${acteur['prenom'] ?? ''} ${acteur['nom'] ?? ''}'.trim(),
+                    imageUrl: acteur['img'] ?? '',
+                  ),
                 ),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 12,
-                  children: [
-                    mediaCard(title: "Leonardo DiCaprio"),
-                    mediaCard(title: "Zendaya"),
-                    mediaCard(title: "Robert Downey Jr."),
-                    mediaCard(title: "Florence Pugh"),
-                  ],
-                ),
-              ],
-            ),
+              );
+            }).toList(),
+          ),
+        ),
+      ],
+    );
+  },
+),
           ],
         ),
-
         //****************************************************************
         // Barre de navigation en bas (BottomNavigationBar)
         //****************************************************************

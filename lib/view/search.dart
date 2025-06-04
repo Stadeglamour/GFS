@@ -35,42 +35,36 @@ class _SearchPageState extends State<SearchPage> {
 
   // 🔄 Récupération des résultats selon le type sélectionné
   Future<void> fetchData() async {
-    String table;
-    switch (selectedType) {
-      case 'Film':
-        table = 'film';
-        break;
-      case 'Série':
-        table = 'serie';
-        break;
-      case 'Acteur':
-        table = 'acteur';
-        break;
-      default:
-        table = 'film'; // Par défaut, on utilise 'film'
-    }
+  List<Map<String, dynamic>> combinedResults = [];
 
-    dynamic query = supabase.from(table).select();
+  final searchFilter = (String column) => (searchQuery.isNotEmpty)
+      ? (supabase.from(column).select().ilike('nom', '%$searchQuery%'))
+      : (supabase.from(column).select());
 
-    if (searchQuery.isNotEmpty) {
-      query = query.ilike('nom', '%$searchQuery%');
-    }
-
-    if (selectedGenre != 'Tous' && selectedType != 'Acteur') {
-      query = query.eq('cathegorie', selectedGenre);
-    }
-
-    // On tri uniquement si la table contient une colonne 'date'
-    if (selectedType != 'Acteur') {
-      query = query.order('date', ascending: !sortByNewest);
-    }
-
-    final response = await query;
-
-    setState(() {
-      results = List<Map<String, dynamic>>.from(response);
-    });
+  if (selectedType == 'Film' || selectedType == 'Tous') {
+    var filmQuery = searchFilter('film');
+    if (selectedGenre != 'Tous') filmQuery = filmQuery.eq('cathegorie', selectedGenre);
+    final filmResults = await filmQuery.order('date', ascending: !sortByNewest);
+    combinedResults.addAll(List<Map<String, dynamic>>.from(filmResults).map((e) => {...e, 'type': 'Film'}));
   }
+
+  if (selectedType == 'Série' || selectedType == 'Tous') {
+    var serieQuery = searchFilter('serie');
+    if (selectedGenre != 'Tous') serieQuery = serieQuery.eq('cathegorie', selectedGenre);
+    final serieResults = await serieQuery.order('date', ascending: !sortByNewest);
+    combinedResults.addAll(List<Map<String, dynamic>>.from(serieResults).map((e) => {...e, 'type': 'Série'}));
+  }
+
+  if (selectedType == 'Acteur' || selectedType == 'Tous') {
+    var acteurQuery = searchFilter('acteur');
+    final acteurResults = await acteurQuery;
+    combinedResults.addAll(List<Map<String, dynamic>>.from(acteurResults).map((e) => {...e, 'type': 'Acteur'}));
+  }
+
+  setState(() {
+    results = combinedResults;
+  });
+}
 
   // 🎭 Récupération des genres uniquement depuis la table `film`
   Future<void> fetchGenres() async {
@@ -91,7 +85,7 @@ class _SearchPageState extends State<SearchPage> {
   Widget buildResultCard(Map<String, dynamic> item) {
     final imageUrl = item['img'] ?? '';
     final title = item['nom'] ?? 'Titre inconnu';
-    final subtitle = selectedType == 'Acteur'
+    final subtitle = item['type'] == 'Acteur'
         ? item['nationalite'] ?? 'Nationalité inconnue'
         : '${item['cathegorie'] ?? 'Genre inconnu'} - ${item['date'] ?? ''}';
 
